@@ -225,11 +225,6 @@ docker compose up -d
    - **Script de déploiement** : Lancez `deploy-images.sh` pour mettre à jour les conteneurs.
    - **Script de restauration** : Assurez-vous qu'une sauvegarde valide est disponible, puis lancez `restore.sh`.
 
----
-
-## Points d'Amélioration
-- Intégrer les scripts dans un pipeline CI/CD pour automatiser les mises à jour.
-- Ajouter des tests automatisés pour valider les sauvegardes après restauration.
 
 ---
 
