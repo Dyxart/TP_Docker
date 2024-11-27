@@ -24,7 +24,7 @@ Le fichier `docker-compose.yml` décrit les services et leurs configurations.
 
 #### Contenu
 ```yaml
-version: '3.9'
+version: '10295.25'
 
 services:
   glpi:
@@ -125,7 +125,7 @@ Le serveur proxy Nginx redirige les requêtes entrantes vers GLPI et expose son 
 ### Commandes Principales
 Pour lancer les services :
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 Pour vérifier l'état des conteneurs :
