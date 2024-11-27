@@ -20,11 +20,11 @@ Deux réseaux Docker sont configurés :
 ## Fichiers et Configurations
 
 ### Fichier `docker-compose.yml`
-Le fichier `docker-compose.yml` décrit les services et leurs configurations.
+Le fichier `docker-compose.yml` décrit les services et leurs configurations. 
 
 #### Contenu
 ```yaml
-version: '10295.25'
+version: '9999'
 
 services:
   glpi:
@@ -41,6 +41,11 @@ services:
       GLPI_DB_PASSWORD: glpipassword
     depends_on:
       - db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   db:
     image: mariadb:latest
@@ -55,6 +60,12 @@ services:
       MYSQL_PASSWORD: glpipassword
     networks:
       - private_network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   nginx:
     image: nginx:latest
@@ -68,6 +79,11 @@ services:
       - public_network
     depends_on:
       - glpi
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   db_data:
@@ -106,45 +122,137 @@ http {
 }
 ```
 
-## Étapes de Mise en Œuvre
+---
 
-### 1. Configuration des Réseaux
-Deux réseaux Docker ont été créés :
-- `public_network` : Pour connecter Nginx avec le monde extérieur.
-- `private_network` : Pour isoler les communications entre GLPI et la base de données.
+## Sauvegarde Automatique des Volumes Docker
 
-### 2. Déploiement de la Base de Données
-Le service **MariaDB** a été configuré pour assurer la persistance des données via le volume `db_data`. Les variables d'environnement définissent les paramètres de connexion.
+Pour garantir la pérennité des données, une tâche Cron a été configurée pour sauvegarder automatiquement le volume Docker `db_data`.
 
-### 3. Déploiement de GLPI
-Le conteneur **GLPI** utilise l'image Docker officielle et se connecte à la base de données via le réseau privé.
-
-### 4. Déploiement de Nginx
-Le serveur proxy Nginx redirige les requêtes entrantes vers GLPI et expose son port sur `8081`.
-
-### Commandes Principales
-Pour lancer les services :
+### Script de sauvegarde (`backup.sh`)
 ```bash
-docker compose up -d
+#!/bin/bash
+
+# Nom du volume à sauvegarder
+VOLUMES=("db_data")
+
+# Répertoire où les sauvegardes seront stockées
+BACKUP_DIR="/path/to/backups"
+
+# Date du jour
+DATE=$(date +"%Y%m%d%H%M")
+
+# Créer le répertoire si nécessaire
+mkdir -p $BACKUP_DIR
+
+# Sauvegarde des volumes
+for VOLUME in "${VOLUMES[@]}"; do
+  docker run --rm \
+    -v ${VOLUME}:/volume \
+    -v ${BACKUP_DIR}:/backup \
+    alpine tar czf /backup/${VOLUME}_${DATE}.tar.gz /volume
+done
 ```
 
-Pour vérifier l'état des conteneurs :
+### Configuration Cron
+Ajoutez cette tâche dans le fichier Crontab :
 ```bash
+0 2 * * * /path/to/backup.sh
+```
+
+---
+
+## Scripts pour la Gestion des Images Docker
+
+### Script de Déploiement des Images Docker à Jour
+
+Ce script permet de mettre à jour les conteneurs en utilisant les dernières versions des images Docker disponibles.
+
+**Nom du script :** `deploy-images.sh`
+```bash
+#!/bin/bash
+
+# Étape 1 : Arrêter les conteneurs en cours d'exécution
+echo "Arrêt des conteneurs existants..."
+docker compose down
+
+# Étape 2 : Récupérer les dernières versions des images Docker
+echo "Mise à jour des images Docker..."
+docker compose pull
+
+# Étape 3 : Relancer les conteneurs avec les nouvelles images
+echo "Relance des conteneurs avec les images mises à jour..."
+docker compose up -d
+
+# Étape 4 : Vérification de l'état des conteneurs
+echo "État des conteneurs après mise à jour :"
 docker ps
 ```
 
+### Script pour Restaurer une Sauvegarde
+
+Ce script restaure les données d'un volume Docker à partir d'une sauvegarde existante.
+
+**Nom du script :** `restore.sh`
+```bash
+#!/bin/bash
+
+# Nom du volume à restaurer
+VOLUME_NAME="db_data"
+
+# Chemin de la sauvegarde à restaurer
+BACKUP_FILE="/path/to/backups/db_data_YYYYMMDDHHMM.tar.gz"
+
+# Vérification que le fichier de sauvegarde existe
+if [ ! -f "$BACKUP_FILE" ]; then
+  echo "Fichier de sauvegarde introuvable : $BACKUP_FILE"
+  exit 1
+fi
+
+# Étape 1 : Arrêter les conteneurs pour éviter les conflits
+echo "Arrêt des conteneurs..."
+docker compose down
+
+# Étape 2 : Supprimer le volume existant
+echo "Suppression du volume existant : $VOLUME_NAME"
+docker volume rm $VOLUME_NAME
+
+# Étape 3 : Recréer le volume vide
+echo "Recréation du volume : $VOLUME_NAME"
+docker volume create $VOLUME_NAME
+
+# Étape 4 : Restaurer la sauvegarde dans le volume
+echo "Restauration de la sauvegarde : $BACKUP_FILE"
+docker run --rm \
+  -v $VOLUME_NAME:/volume \
+  -v $(dirname $BACKUP_FILE):/backup \
+  alpine tar xzf /backup/$(basename $BACKUP_FILE) -C /volume
+
+# Étape 5 : Relancer les conteneurs
+echo "Relance des conteneurs..."
+docker compose up -d
+```
+
+---
+
 ## Tests et Validation
 
-1. **Accès Nginx** : Tester l'accès via `http://<server_ip>:8081`.
-2. **Validation des Réseaux** : Utiliser des outils comme `tcpdump` pour vérifier l'isolation du réseau privé.
-3. **Persistance des Données** : S'assurer que les données de la base sont conservées après suppression du conteneur MariaDB.
+1. **Validation des Healthchecks**
+   - Vérifiez les statuts des conteneurs avec :
+     ```bash
+     docker ps
+     ```
+
+2. **Test des scripts**
+   - **Script de déploiement** : Lancez `deploy-images.sh` pour mettre à jour les conteneurs.
+   - **Script de restauration** : Assurez-vous qu'une sauvegarde valide est disponible, puis lancez `restore.sh`.
+
+---
 
 ## Points d'Amélioration
-- Ajouter des **healthchecks** pour surveiller l'état des services.
-- Mettre en place une tâche **Cron** pour sauvegarder régulièrement les volumes.
-- Automatiser la mise à jour des images via un pipeline **CI/CD**.
+- Intégrer les scripts dans un pipeline CI/CD pour automatiser les mises à jour.
+- Ajouter des tests automatisés pour valider les sauvegardes après restauration.
 
 ---
 
 ## Conclusion
-Cette configuration assure un environnement Docker sécurisé et performant pour déployer GLPI. Les bonnes pratiques ont été suivies pour garantir l'isolation des services et la persistance des données.
+Cette documentation rassemble tous les éléments nécessaires pour gérer et maintenir votre environnement Docker pour GLPI, avec une surveillance active, des sauvegardes, et des mises à jour simplifiées.
