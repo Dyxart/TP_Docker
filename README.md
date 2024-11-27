@@ -72,7 +72,7 @@ services:
     container_name: glpi_nginx
     restart: unless-stopped
     ports:
-      - "8081:80" # Expose Nginx uniquement sur le port 8081
+      - "8081:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
@@ -132,19 +132,11 @@ Pour garantir la pérennité des données, une tâche Cron a été configurée p
 ```bash
 #!/bin/bash
 
-# Nom du volume à sauvegarder
 VOLUMES=("db_data")
-
-# Répertoire où les sauvegardes seront stockées
 BACKUP_DIR="/path/to/backups"
-
-# Date du jour
 DATE=$(date +"%Y%m%d%H%M")
-
-# Créer le répertoire si nécessaire
 mkdir -p $BACKUP_DIR
 
-# Sauvegarde des volumes
 for VOLUME in "${VOLUMES[@]}"; do
   docker run --rm \
     -v ${VOLUME}:/volume \
@@ -171,19 +163,15 @@ Ce script permet de mettre à jour les conteneurs en utilisant les dernières ve
 ```bash
 #!/bin/bash
 
-# Étape 1 : Arrêter les conteneurs en cours d'exécution
 echo "Arrêt des conteneurs existants..."
 docker compose down
 
-# Étape 2 : Récupérer les dernières versions des images Docker
 echo "Mise à jour des images Docker..."
 docker compose pull
 
-# Étape 3 : Relancer les conteneurs avec les nouvelles images
 echo "Relance des conteneurs avec les images mises à jour..."
 docker compose up -d
 
-# Étape 4 : Vérification de l'état des conteneurs
 echo "État des conteneurs après mise à jour :"
 docker ps
 ```
@@ -196,38 +184,29 @@ Ce script restaure les données d'un volume Docker à partir d'une sauvegarde ex
 ```bash
 #!/bin/bash
 
-# Nom du volume à restaurer
 VOLUME_NAME="db_data"
-
-# Chemin de la sauvegarde à restaurer
 BACKUP_FILE="/path/to/backups/db_data_YYYYMMDDHHMM.tar.gz"
 
-# Vérification que le fichier de sauvegarde existe
 if [ ! -f "$BACKUP_FILE" ]; then
   echo "Fichier de sauvegarde introuvable : $BACKUP_FILE"
   exit 1
 fi
 
-# Étape 1 : Arrêter les conteneurs pour éviter les conflits
 echo "Arrêt des conteneurs..."
 docker compose down
 
-# Étape 2 : Supprimer le volume existant
 echo "Suppression du volume existant : $VOLUME_NAME"
 docker volume rm $VOLUME_NAME
 
-# Étape 3 : Recréer le volume vide
 echo "Recréation du volume : $VOLUME_NAME"
 docker volume create $VOLUME_NAME
 
-# Étape 4 : Restaurer la sauvegarde dans le volume
 echo "Restauration de la sauvegarde : $BACKUP_FILE"
 docker run --rm \
   -v $VOLUME_NAME:/volume \
   -v $(dirname $BACKUP_FILE):/backup \
   alpine tar xzf /backup/$(basename $BACKUP_FILE) -C /volume
 
-# Étape 5 : Relancer les conteneurs
 echo "Relance des conteneurs..."
 docker compose up -d
 ```
